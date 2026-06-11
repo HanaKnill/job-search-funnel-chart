@@ -1,0 +1,141 @@
+# Job Tracker Sankey Plot
+# Paste this into a Google Colab cell and run!
+
+# ── 1. Install & import ──────────────────────────────────────────────────────
+# (plotly is already available in Colab, but just in case:)
+# !pip install plotly --quiet
+
+import pandas as pd
+import plotly.graph_objects as go
+
+# ── 2. Load your CSV ─────────────────────────────────────────────────────────
+# Upload your file first (Files panel on the left → Upload), then update the path:
+df = pd.read_csv("/J0b Tracker_2026-06-11.csv")
+
+# ── 3. Build Sankey node/link data ───────────────────────────────────────────
+# Flow: Applied → [Ghosted | Interviewed | Rejected | Position Closed | Withdrew]
+#       Interviewed → [Rejected | Offer Accepted | Offer Declined | Position Closed | Withdrew]
+
+total = len(df)
+ghosted     = (df["Ghosted?"] == "Yes").sum()
+interviewed = (df["Interviewed?"] == "Yes").sum()
+
+# Final statuses among interviewed
+inter_df = df[df["Interviewed?"] == "Yes"]
+inter_rejected       = (inter_df["Final status"] == "Rejected").sum()
+inter_offer_accepted = (inter_df["Final status"] == "Offer accepted").sum()
+inter_offer_declined = (inter_df["Final status"] == "Offer declined").sum()
+inter_closed         = (inter_df["Final status"] == "Position closed").sum()
+inter_withdrew       = (inter_df["Final status"] == "Withdrew").sum()
+inter_ghosted = (inter_df["Ghosted?"] == "Yes").sum()
+
+# Final statuses among non-interviewed, non-ghosted (flow straight from Applied)
+no_inter_df = df[(df["Interviewed?"] == "No") & (df["Ghosted?"] == "No")]
+early_rejected = (no_inter_df["Final status"] == "Rejected").sum()
+early_closed   = (no_inter_df["Final status"] == "Position closed").sum()
+early_withdrew = (no_inter_df["Final status"] == "Withdrew").sum()
+
+# ── 4. Define nodes ──────────────────────────────────────────────────────────
+# Index:  0=Applied, 1=Ghosted, 2=Interviewed, 3=Rejected,
+#         4=Position Closed, 5=Withdrew,
+#         6=Offer Declined, 7=Offer Accepted
+
+node_labels = [
+    f"Applied\n({total})",
+    f"Ghosted\n({ghosted})",
+    f"Interviewed\n({interviewed})",
+    f"Rejected\n({early_rejected + inter_rejected})",      # combined count
+    f"Position Closed\n({early_closed + inter_closed})",   # combined count
+    f"Withdrew\n({early_withdrew + inter_withdrew})",       # combined count
+    f"Offer Declined\n({inter_offer_declined})",
+    f"Offer Accepted\n({inter_offer_accepted})",
+    f"Ghosted\n({ghosted + inter_ghosted})",
+
+]
+
+node_colors = [
+    "#6C8EBF",   # Applied – blue
+    "#E6E6FA",   # Ghosted – lavender
+    "#82B366",   # Interviewed – green
+    "#D6A4A4",   # Rejected – light red
+    "#25CDEF",   # Position Closed – lavender
+    "#FFB6C1",   # Withdrew – lavender
+    "#F39C12",   # Offer Declined – amber
+    "#27AE60",   # Offer Accepted – bright green
+]
+
+# ── 5. Define links ──────────────────────────────────────────────────────────
+#   source → target : value
+sources = [0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 2]
+targets = [1, 2, 3, 4, 5, 3, 7, 6, 4, 5, 1]
+values  = [
+    ghosted,
+    interviewed,
+    early_rejected,
+    early_closed,         # Applied → Position Closed
+    early_withdrew,       # Applied → Withdrew
+    inter_rejected,       # Interviewed → Rejected
+    inter_offer_declined, # Interviewed → Offer Declined
+    inter_offer_accepted, # Interviewed → Offer Accepted
+    inter_closed,         # Interviewed → Position Closed
+    inter_withdrew,       # Interviewed → Withdrew
+    inter_ghosted,        # Interview -> Ghosted
+]
+
+link_colors = [
+    "rgba(230,230,250,0.5)",   # → Ghosted
+    "rgba(130,179,102,0.4)",   # → Interviewed
+    "rgba(214,164,164,0.4)",   # → Rejected (from Applied)
+    "rgba(37, 205, 239, 0.3)",   # → Position Closed (from Applied)
+    "rgba(230,230,250,0.4)",   # → Withdrew (from Applied)
+    "rgba(214,164,164,0.4)",   # → Rejected (from Interviewed)
+    "rgba(39,174,96,0.4)",    # → Offer Declined
+    "rgba(243,156,18,0.4)",     # → Offer Accepted
+    "rgba(37, 205, 239, 0.3)",   # → Position Closed (from Interviewed)
+    "rgba(255,182,193,0.4)",   # → Withdrew (from Interviewed)
+    "rgba(230,230,250,0.5)",   # → Ghosted (from Interviewed) ← new
+
+]
+
+# Remove zero-value links to keep the diagram clean
+filtered = [(s, t, v, c) for s, t, v, c in zip(sources, targets, values, link_colors) if v > 0]
+if filtered:
+    sources, targets, values, link_colors = zip(*filtered)
+
+# ── 6. Build & show the figure ───────────────────────────────────────────────
+fig = go.Figure(go.Sankey(
+    arrangement="snap",
+    node=dict(
+        pad=20,
+        thickness=20,
+        line=dict(color="white", width=0.5),
+        label=node_labels,
+        color=node_colors,
+        hovertemplate="%{label}<extra></extra>",
+        x=[0.0, 1.0, 0.5, 1.0, 1.0, 1.0, 1.0, 1.0],
+        y=[0.9, 0.1, 0.9, 0.1, 0.3, 0.5, 0.7, 0.8],
+    ),
+    link=dict(
+        source=list(sources),
+        target=list(targets),
+        value=list(values),
+        color=list(link_colors),
+    ),
+))
+
+fig.update_layout(
+    title=dict(
+        text="Job Search Funnel",
+        font=dict(size=22),
+        x=0.5,
+    ),
+    font=dict(size=13, family="Arial"),
+    paper_bgcolor="white",
+    height=520,
+    margin=dict(l=30, r=30, t=70, b=30),
+)
+
+fig.show()
+
+# Optional: save as HTML so you can share/embed it
+fig.write_html("/job_tracker_sankey.html")
